@@ -1,3 +1,5 @@
+import base64
+import csv
 import os
 import io
 import h5py
@@ -20,15 +22,15 @@ import cv2
 import torch
 
 # Show the image in ipynb
-from IPython.display import clear_output, Image, display
-import PIL.Image
+# from IPython.display import clear_output, Image, display
+# import PIL.Image
 
-
-def showarray(a, fmt='jpeg'):
-    a = np.uint8(np.clip(a, 0, 255))
-    f = io.BytesIO()
-    PIL.Image.fromarray(a).save(f, fmt)
-    display(Image(data=f.getvalue()))
+#
+# def showarray(a, fmt='jpeg'):
+#     a = np.uint8(np.clip(a, 0, 255))
+#     f = io.BytesIO()
+#     PIL.Image.fromarray(a).save(f, fmt)
+#     display(Image(data=f.getvalue()))
 
 
 def doit(raw_image, predictor):
@@ -106,56 +108,71 @@ def doit(raw_image, predictor):
         print(instances)
 
         # union_bounding_boxes
-        bboxes = instances.pred_boxes.tensor
-        union_boxes = []
-        union_boxes_index = []
-        for i in range(len(bboxes)):
-            obj_box = bboxes[i]
-            for j in range(len(bboxes)):
-                sub_box = bboxes[j]
-                # compare the different object and subject to get the union box
-                x1 = obj_box[0].item() if obj_box[0] < sub_box[0] else sub_box[0].item()
-                y1 = obj_box[1].item() if obj_box[1] < sub_box[1] else sub_box[1].item()
-                x2 = obj_box[2].item() if obj_box[2] > sub_box[2] else sub_box[2].item()
-                y2 = obj_box[3].item() if obj_box[3] > sub_box[3] else sub_box[3].item()
-                union_boxes.append([x1, y1, x2, y2])
-                union_boxes_index.append((i, j))
+        # bboxes = instances.pred_boxes.tensor
+        # union_boxes = []
+        # union_boxes_index = []
+        # for i in range(len(bboxes)):
+        #     obj_box = bboxes[i]
+        #     for j in range(len(bboxes)):
+        #         sub_box = bboxes[j]
+        #         # compare the different object and subject to get the union box
+        #         x1 = obj_box[0].item() if obj_box[0] < sub_box[0] else sub_box[0].item()
+        #         y1 = obj_box[1].item() if obj_box[1] < sub_box[1] else sub_box[1].item()
+        #         x2 = obj_box[2].item() if obj_box[2] > sub_box[2] else sub_box[2].item()
+        #         y2 = obj_box[3].item() if obj_box[3] > sub_box[3] else sub_box[3].item()
+        #         union_boxes.append([x1, y1, x2, y2])
+        #         union_boxes_index.append((i, j))
+        #
+        # union_boxes_tensor = torch.from_numpy(np.array(union_boxes)).cuda()
+        #
+        # union_box_features = predictor.model.roi_heads._shared_roi_transform(
+        #     features, [Boxes(union_boxes_tensor)]
+        # )
+        # union_box_features = union_box_features.mean(dim=[2, 3])  # pooled to 1x1
+        # print('Union Feature Size:', union_box_features.shape)
 
-        union_boxes_tensor = torch.from_numpy(np.array(union_boxes)).cuda()
-
-        union_box_features = predictor.model.roi_heads._shared_roi_transform(
-            features, [Boxes(union_boxes_tensor)]
-        )
-        union_box_features = union_box_features.mean(dim=[2, 3])  # pooled to 1x1
-        print('Union Feature Size:', union_box_features.shape)
-
-        return instances, roi_features, union_boxes_tensor, union_box_features, union_boxes_index
+        # return instances, roi_features, union_boxes_tensor, union_box_features, union_boxes_index
+        return instances, roi_features
 
 
-def list_data(predictor, path, h5file):
+def list_data(predictor, path, tsvfile):
     files = os.listdir(path)
     i = 0
+    # print(True if '2340300.jpg' in files else False)
     for file in files:
         if not os.path.isdir(file):
+
+            # print(path + '/' + str(image_id) + '.jpg')
             im = cv2.imread(path + '/' + file)
-            instances, roi_features, union_boxes, union_boxes_feature, union_boxes_index = doit(im, predictor)
+            # image_id = 2340300
+            # print(file)
+            # im = cv2.imread(path + '/' + str(image_id) + '.jpg')
+            if im is None:
+                continue
             image_id = file.replace('.jpg', '')
+            print('image id:', image_id)
+            # instances, roi_features, union_boxes, union_boxes_feature, union_boxes_index = doit(im, predictor)
+            instances, roi_features = doit(im, predictor)
+            image_size = instances._image_size
             data = {
                 'image_id': image_id,
-                'image_h': instances.image_height,
-                'image_w': instances.image_width,
-                'num_boxes': instances.num_instances,
-                'boxes': instances.pred_boxes.tensor,
-                'features': roi_features,
-                'union_boxes': union_boxes,
-                'union_boxes_feature': union_boxes_feature,
-                'union_boxes_index': union_boxes_index
+                'image_h': image_size[0],
+                'image_w': image_size[1],
+                'num_boxes': len(instances.pred_boxes),
+                'boxes': str(base64.b64encode(instances.pred_boxes.tensor.to('cpu').numpy()), encoding="utf-8"),
+                'features': str(base64.b64encode(roi_features.to('cpu').numpy()), encoding="utf-8"),
+                'classes': str(base64.b64encode(instances.pred_classes.to('cpu').numpy()), encoding="utf-8")
+                # 'union_boxes': base64.b64encode(union_boxes.to('cpu').numpy()),
+                # 'union_boxes_feature': base64.b64encode(union_boxes_feature.to('cpu').numpy()),
+                # 'union_boxes_index': base64.b64encode(np.array(union_boxes_index))
             }
 
-            h5file.create_dataset(image_id, data=data)
+            tsvfile.writerow(data)
 
             if i % 10000 == 0:
-                print('Extracting Features for i.....')
+                print('Extracting Features for i.....{}', i)
+
+            i += 1
 
 
 if __name__ == '__main__':
@@ -188,9 +205,15 @@ if __name__ == '__main__':
 
     path = "/home/fanfu/newdisk/dataset/VisualGenome/VG_100K"
     path2 = "/home/fanfu/newdisk/dataset/VisualGenome/VG_100K_2"
+    # path = "/home/scratch/VisualGenome/images/VG_100K"
+    # path2 = "/home/scratch/VisualGenome/images/VG_100K_2"
 
-    with h5py.File('feature_VG.h5', 'a') as h:
+    # FIELDNAMES = ['image_id', 'image_h', 'image_w', 'num_boxes', 'boxes', 'features', 'union_boxes', 'union_boxes_feature', 'union_boxes_index']
+    FIELDNAMES = ['image_id', 'image_h', 'image_w', 'num_boxes', 'boxes', 'features', 'classes']
+    with open('feature_VG_1.tsv', 'w') as tsvfile:
+        writer = csv.DictWriter(tsvfile, delimiter='\t', fieldnames=FIELDNAMES)
+    # with h5py.File('feature_VG.h5', 'a') as h:
         print('Start Extract Feature for VG_100K')
-        list_data(predictor, path, h)
+        list_data(predictor, path, writer)
         print('Start Extract Feature for VG_100K_2')
-        list_data(predictor, path2, h)
+        list_data(predictor, path2, writer)
