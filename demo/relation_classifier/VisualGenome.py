@@ -90,12 +90,13 @@ class VisualGenome:
             xy=(bbox[0], bbox[1]), width=bbox[2] - bbox[0], height=bbox[3] - bbox[1],
             fill=False, edgecolor=color, linewidth=2)
 
-    def visualize(self, im, boxes, classes):
+    def visualize(self, im, boxes, classes, name):
         fig = plt.imshow(im)
         for i, box in enumerate(boxes):
             rect = self.bbox_to_rect(box, 'red')
             fig.axes.add_patch(rect)
-            fig.axes.text(rect.xy[0] + 24, rect.xy[1] + 10, classes[i][0],
-                          va='center', ha='center', fontsize=6, color='blue',
-                          bbox=dict(facecolor='m', lw=0))
-        plt.show()
+            if len(classes) != 0:
+                fig.axes.text(rect.xy[0] + 24, rect.xy[1] + 10, classes[i],
+                              va='center', ha='center', fontsize=6, color='blue',
+                              bbox=dict(facecolor='m', lw=0))
+        plt.savefig(name)

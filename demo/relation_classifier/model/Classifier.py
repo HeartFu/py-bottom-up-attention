@@ -15,15 +15,15 @@ class Classifier(nn.Module):
     def __init__(self, dropout):
         super(Classifier, self).__init__()
 
-        cfg = get_cfg()
-        cfg.merge_from_file("../../configs/VG-Detection/faster_rcnn_R_101_C4_attr_caffemaxpool.yaml")
-        cfg.MODEL.RPN.POST_NMS_TOPK_TEST = 300
-        cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = 0.6
-        cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.2
-        # VG Weight
-        cfg.MODEL.WEIGHTS = "http://nlp.cs.unc.edu/models/faster_rcnn_from_caffe_attr_original.pkl"
-        self.predictor = DefaultPredictor(cfg)
-        csv.field_size_limit(sys.maxsize)
+        # cfg = get_cfg()
+        # cfg.merge_from_file("../../configs/VG-Detection/faster_rcnn_R_101_C4_attr_caffemaxpool.yaml")
+        # cfg.MODEL.RPN.POST_NMS_TOPK_TEST = 300
+        # cfg.MODEL.ROI_HEADS.NMS_THRESH_TEST = 0.6
+        # cfg.MODEL.ROI_HEADS.SCORE_THRESH_TEST = 0.2
+        # # VG Weight
+        # cfg.MODEL.WEIGHTS = "http://nlp.cs.unc.edu/models/faster_rcnn_from_caffe_attr_original.pkl"
+        # self.predictor = DefaultPredictor(cfg)
+        # csv.field_size_limit(sys.maxsize)
 
         self.fc_obj = nn.Linear(2048, 512)
         self.obj_drop = torch.nn.Dropout(dropout)
@@ -36,34 +36,38 @@ class Classifier(nn.Module):
         self.dropout = dropout
         self._init_weights()
 
-    def forward(self, im, obj_boxes, sub_boxes, union_boxes):
+    def forward(self, obj_feature, sub_feature, union_feature):
 
         # extract features
         # import pdb
         # pdb.set_trace()
-        batch = im.shape[0]
-
-        for i in range(batch):
-            if i == 0:
-                obj_feature = self.doit_boxes(im[i], obj_boxes[i])
-                sub_feature = self.doit_boxes(im[i], sub_boxes[i])
-                union_feature = self.doit_boxes(im[i], sub_boxes[i])
-                obj_feature = torch.unsqueeze(obj_feature, 0)
-                sub_feature = torch.unsqueeze(sub_feature, 0)
-                union_feature = torch.unsqueeze(union_feature, 0)
-            else:
-                obj_feature_item = self.doit_boxes(im[i], obj_boxes[i])
-                sub_feature_item = self.doit_boxes(im[i], sub_boxes[i])
-                union_feature_item = self.doit_boxes(im[i], sub_boxes[i])
-                obj_feature = torch.cat((obj_feature, torch.unsqueeze(obj_feature_item, 0)), 0)
-                sub_feature = torch.cat((sub_feature, torch.unsqueeze(sub_feature_item, 0)), 0)
-                union_feature = torch.cat((union_feature, torch.unsqueeze(union_feature_item, 0)), 0)
+        # batch = im.shape[0]
+        #
+        # for i in range(batch):
+        #     if i == 0:
+        #         obj_feature = self.doit_boxes(im[i], obj_boxes[i])
+        #         sub_feature = self.doit_boxes(im[i], sub_boxes[i])
+        #         union_feature = self.doit_boxes(im[i], union_boxes[i])
+        #         obj_feature = torch.unsqueeze(obj_feature, 0)
+        #         sub_feature = torch.unsqueeze(sub_feature, 0)
+        #         union_feature = torch.unsqueeze(union_feature, 0)
+        #     else:
+        #         obj_feature_item = self.doit_boxes(im[i], obj_boxes[i])
+        #         sub_feature_item = self.doit_boxes(im[i], sub_boxes[i])
+        #         union_feature_item = self.doit_boxes(im[i], union_boxes[i])
+        #         obj_feature = torch.cat((obj_feature, torch.unsqueeze(obj_feature_item, 0)), 0)
+        #         sub_feature = torch.cat((sub_feature, torch.unsqueeze(sub_feature_item, 0)), 0)
+        #         union_feature = torch.cat((union_feature, torch.unsqueeze(union_feature_item, 0)), 0)
+        #
+        # obj_feature_reshape = torch.reshape(obj_feature, (-1, obj_feature.size(2)))
+        # sub_feature_reshape = torch.reshape(sub_feature, (-1, sub_feature.size(2)))
+        # union_feature_reshape = torch.reshape(union_feature, (-1, union_feature.size(2)))
 
         obj_feature = F.relu(self.obj_drop(self.fc_obj(obj_feature)))
         sub_feature = F.relu(self.sub_drop(self.fc_sub(sub_feature)))
         union_feature = F.relu(self.union_drop(self.fc_union(union_feature)))
 
-        feature = torch.cat((obj_feature, sub_feature, union_feature), 2)
+        feature = torch.cat((obj_feature, sub_feature, union_feature), 1)
 
         x = self.fc_classification(feature)
 
