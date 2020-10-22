@@ -24,11 +24,12 @@ class BoxesDataset(data.Dataset):
             data_line_split = data_line.split(' ')
             img_path = data_line_split[0].split('/')
             img_name = int(img_path[1].replace('.jpg', ''))
-            # relationships[img_name]['image_id'] = img_name
-            self.dataset.append({
-                'image_id': img_name,
-                'relationships': relationships[img_name]
-            })
+            if img_name in relationships.keys():
+                # relationships[img_name]['image_id'] = img_name
+                self.dataset.append({
+                    'image_id': img_name,
+                    'relationships': relationships[img_name]
+                })
 
         self.img_path = image_path
 

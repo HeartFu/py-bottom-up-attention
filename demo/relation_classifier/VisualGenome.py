@@ -42,14 +42,14 @@ class VisualGenome:
             for relationship in item['relationships']:
                 obj = relationship['object']
                 sub = relationship['subject']
+                if obj['name'].lower().strip() not in self.object_map_class.keys() or sub['name'].lower().strip() not in self.object_map_class:
+                    continue
+
                 if relationship['predicate'].lower().strip() in self.relation_map_class.keys():
                     predicte = self.relation_map_class[relationship['predicate'].lower().strip()]
                 else:
                     predicte = 20
                 count_classes[predicte] += 1
-
-                if obj['name'].lower().strip() not in self.object_map_class.keys() or sub['name'].lower().strip() not in self.object_map_class:
-                    continue
 
                 relation = {
                     'predicate': predicte,
@@ -66,7 +66,8 @@ class VisualGenome:
                     'relationship_id': relationship['relationship_id']
                 }
                 relation_list.append(relation)
-            self.dataset[item['image_id']] = relation_list
+            if len(relation_list) != 0:
+                self.dataset[item['image_id']] = relation_list
         print(count_classes)
 
     def get_relationship(self, image_id):

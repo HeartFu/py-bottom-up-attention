@@ -30,7 +30,7 @@ def parse_opt():
                         help='The path of union boxes feature')
     parser.add_argument('--learning_rate', type=float, default=1e-4,
                         help='Initial Learning Rate')
-    parser.add_argument('--batch_size', type=int, default=32,
+    parser.add_argument('--batch_size', type=int, default=6,
                         help='minibatch size')
     parser.add_argument('--max_epochs', type=int, default=20,
                         help='number of epochs')

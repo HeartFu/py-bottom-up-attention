@@ -163,7 +163,8 @@ def train(cfgs):
             img_id, obj_boxes, sub_boxes, union_boxes, labels = batch
             # print(img_id)
 
-            obj_boxes, sub_boxes, union_boxes, labels = obj_boxes.cuda(), sub_boxes.cuda(), union_boxes.cuda(), labels.cuda()
+            # obj_boxes, sub_boxes, union_boxes, labels = obj_boxes.cuda(), sub_boxes.cuda(), union_boxes.cuda(), labels.cuda()
+            labels = labels.cuda()
 
             with torch.no_grad():
                 obj_feature, sub_feature, union_feature = extract_feature(img_id, predictor, obj_boxes, sub_boxes,
@@ -224,8 +225,8 @@ def train(cfgs):
                     img_id, obj_boxes, sub_boxes, union_boxes, labels = batch
                     # print(img_id)
 
-                    obj_boxes, sub_boxes, union_boxes, labels = obj_boxes.cuda(), sub_boxes.cuda(), union_boxes.cuda(), labels.cuda()
-
+                    # obj_boxes, sub_boxes, union_boxes, labels = obj_boxes.cuda(), sub_boxes.cuda(), union_boxes.cuda(), labels.cuda()
+                    labels = labels.cuda()
                     with torch.no_grad():
                         obj_feature, sub_feature, union_feature = extract_feature(img_id, predictor, obj_boxes,
                                                                                   sub_boxes,
@@ -299,30 +300,61 @@ def extract_feature(img_id, predictor, obj_boxes, sub_boxes, union_boxes, cfgs):
     batch = len(img_id)
 
     flag = 0 # set init feature tensor
+    images = []
+    box_list = []
+    box_len = []
     for i in range(batch):
-        start_time = time.time()
         im = cv2.imread(os.path.join(cfgs.img_path, 'VG_100K', str(img_id[i]) + '.jpg'))
         if im is None:
             im = cv2.imread(os.path.join(cfgs.img_path, 'VG_100K_2', str(img_id[i]) + '.jpg'))
         if im is None:
             continue
-        if flag == 0:
-            obj_feature = doit_boxes(im, predictor, remove_padding_bbox(obj_boxes[i]))
-            sub_feature = doit_boxes(im, predictor, remove_padding_bbox(sub_boxes[i]))
-            union_feature = doit_boxes(im, predictor, remove_padding_bbox(union_boxes[i]))
-            flag = 1
-            # obj_feature = torch.unsqueeze(obj_feature, 0)
-            # sub_feature = torch.unsqueeze(sub_feature, 0)
-            # union_feature = torch.unsqueeze(union_feature, 0)
-        else:
-            obj_feature_item = doit_boxes(im, predictor, remove_padding_bbox(obj_boxes[i]))
-            sub_feature_item = doit_boxes(im, predictor, remove_padding_bbox(sub_boxes[i]))
-            union_feature_item = doit_boxes(im, predictor, remove_padding_bbox(union_boxes[i]))
-            obj_feature = torch.cat((obj_feature, obj_feature_item), 0)
-            sub_feature = torch.cat((sub_feature, sub_feature_item), 0)
-            union_feature = torch.cat((union_feature, union_feature_item), 0)
 
-        print('Done (t={:0.2f}s)'.format(time.time() - start_time))
+        image, boxes_all = handle_boxes_img(im, predictor, remove_padding_bbox(obj_boxes[i]), remove_padding_bbox(sub_boxes[i]), remove_padding_bbox(union_boxes[i]))
+        images.append({'image': image})
+        box_list.append(boxes_all)
+        box_len.append(int(len(boxes_all) / 3))
+
+    print(img_id)
+    print(box_len)
+    features = doit_boxes(images, predictor, box_list)
+
+    obj_feature = torch.rand(0,2048).cuda()
+    sub_feature = torch.rand(0,2048).cuda()
+    union_feature = torch.rand(0,2048).cuda()
+
+    # split object, subject and union
+    start = 0
+    for i in range(batch):
+        length = box_len[i]
+        if length != 0:
+            feature_box = features[start: start + length * 3]
+            obj_feat = feature_box[0: length]
+            sub_feat = features[length:length * 2]
+            union_feat = features[length * 2: length * 3]
+
+            obj_feature = torch.cat((obj_feature, obj_feat), dim=0)
+            sub_feature = torch.cat((sub_feature, sub_feat), dim=0)
+            union_feature = torch.cat((union_feature, union_feat), dim=0)
+        start = start + length * 3
+
+        # if flag == 0:
+        #     obj_feature = doit_boxes(im, predictor, remove_padding_bbox(obj_boxes[i]))
+        #     sub_feature = doit_boxes(im, predictor, remove_padding_bbox(sub_boxes[i]))
+        #     union_feature = doit_boxes(im, predictor, remove_padding_bbox(union_boxes[i]))
+        #     flag = 1
+        #     # obj_feature = torch.unsqueeze(obj_feature, 0)
+        #     # sub_feature = torch.unsqueeze(sub_feature, 0)
+        #     # union_feature = torch.unsqueeze(union_feature, 0)
+        # else:
+        #     obj_feature_item = doit_boxes(im, predictor, remove_padding_bbox(obj_boxes[i]))
+        #     sub_feature_item = doit_boxes(im, predictor, remove_padding_bbox(sub_boxes[i]))
+        #     union_feature_item = doit_boxes(im, predictor, remove_padding_bbox(union_boxes[i]))
+        #     obj_feature = torch.cat((obj_feature, obj_feature_item), 0)
+        #     sub_feature = torch.cat((sub_feature, sub_feature_item), 0)
+        #     union_feature = torch.cat((union_feature, union_feature_item), 0)
+        #
+        # print('Done (t={:0.2f}s)'.format(time.time() - start_time))
     # obj_feature_reshape = torch.reshape(obj_feature, (-1, obj_feature.size(2)))
     # sub_feature_reshape = torch.reshape(sub_feature, (-1, sub_feature.size(2)))
     # union_feature_reshape = torch.reshape(union_feature, (-1, union_feature.size(2)))
@@ -330,43 +362,56 @@ def extract_feature(img_id, predictor, obj_boxes, sub_boxes, union_boxes, cfgs):
     return obj_feature, sub_feature, union_feature
 
 
-# def handle_boxes_img(raw_image, predictor, raw_boxes):
-#     raw_boxes = Boxes(raw_boxes)
-#     with torch.no_grad():
-#         raw_height, raw_width = raw_image.shape[:2]
-#         # Preprocessing
-#         image = predictor.transform_gen.get_transform(raw_image).apply_image(raw_image)
-#         new_height, new_width = image.shape[:2]
-#         scale_x = 1. * new_width / raw_width
-#         scale_y = 1. * new_height / raw_height
-#         # print(scale_x, scale_y)
-#         boxes = raw_boxes.clone()
-#         boxes.scale(scale_x=scale_x, scale_y=scale_y)
-#
-#         image = torch.as_tensor(image.astype("float32").transpose(2, 0, 1))
-#     return image, boxes
-
-def doit_boxes(raw_image, predictor, raw_boxes):
-    # raw_boxes = Boxes(torch.from_numpy(np.asarray(raw_boxes)).cuda())
-    raw_boxes = Boxes(raw_boxes)
+def handle_boxes_img(raw_image, predictor, obj_box, sub_box, union_box):
+    boxes_all = torch.cat((obj_box, sub_box, union_box))
+    boxes_all = Boxes(boxes_all.cuda())
     with torch.no_grad():
         raw_height, raw_width = raw_image.shape[:2]
-        # print("Original image size: ", (raw_height, raw_width))
-
         # Preprocessing
         image = predictor.transform_gen.get_transform(raw_image).apply_image(raw_image)
-        # print("Transformed image size: ", image.shape[:2])
-
         new_height, new_width = image.shape[:2]
         scale_x = 1. * new_width / raw_width
         scale_y = 1. * new_height / raw_height
         # print(scale_x, scale_y)
-        boxes = raw_boxes.clone()
-        boxes.scale(scale_x=scale_x, scale_y=scale_y)
 
-        # ---
+        boxes_all_copy = boxes_all.clone()
+        boxes_all_copy.scale(scale_x=scale_x, scale_y=scale_y)
+
+        # obj_box_copy = obj_box.clone()
+        # sub_box_copy = sub_box.clone()
+        # union_box_copy = union_box.clone()
+        #
+        # obj_box_copy.scale(scale_x=scale_x, scale_y=scale_y)
+        # sub_box_copy.scale(scale_x=scale_x, scale_y=scale_y)
+        # union_box_copy.scale(scale_x=scale_x, scale_y=scale_y)
+
+        # boxes = raw_boxes.clone()
+        # boxes.scale(scale_x=scale_x, scale_y=scale_y)
+
         image = torch.as_tensor(image.astype("float32").transpose(2, 0, 1))
-        inputs = [{"image": image, "height": raw_height, "width": raw_width}]
+    return image, boxes_all
+
+def doit_boxes(inputs, predictor, proposal_boxes):
+    # raw_boxes = Boxes(torch.from_numpy(np.asarray(raw_boxes)).cuda())
+    # raw_boxes = Boxes(raw_boxes)
+    with torch.no_grad():
+        # raw_height, raw_width = raw_image.shape[:2]
+        # # print("Original image size: ", (raw_height, raw_width))
+        #
+        # # Preprocessing
+        # image = predictor.transform_gen.get_transform(raw_image).apply_image(raw_image)
+        # # print("Transformed image size: ", image.shape[:2])
+        #
+        # new_height, new_width = image.shape[:2]
+        # scale_x = 1. * new_width / raw_width
+        # scale_y = 1. * new_height / raw_height
+        # # print(scale_x, scale_y)
+        # boxes = raw_boxes.clone()
+        # boxes.scale(scale_x=scale_x, scale_y=scale_y)
+        #
+        # # ---
+        # image = torch.as_tensor(image.astype("float32").transpose(2, 0, 1))
+        # inputs = [{"image": image, "height": raw_height, "width": raw_width}]
         images = predictor.model.preprocess_image(inputs)
 
         # Run Backbone Res1-Res4
@@ -374,7 +419,7 @@ def doit_boxes(raw_image, predictor, raw_boxes):
         # print('features:', features['res4'].shape)
 
         # Generate proposals with RPN
-        proposal_boxes = [boxes]
+        # proposal_boxes = [boxes]
         features = [features[f] for f in predictor.model.roi_heads.in_features]
         box_features = predictor.model.roi_heads._shared_roi_transform(
             features, proposal_boxes
